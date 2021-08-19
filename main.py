@@ -6,20 +6,10 @@ from discord.ext import commands
 import json
 import sys
 from datetime import datetime
-from keepAlive import keep_alive
-#import traceback
 from random import randint, choice
 import os
 import atexit
 import asyncio
-#from google_images_download import google_images_download 
-
-from replit import db as elements
-from replit import db as players
-from replit import db as reactions
-  
-# creating object
-#response = google_images_download.googleimagesdownload() 
 
 intents = discord.Intents.default()
 intents.members = True
@@ -28,6 +18,8 @@ client = commands.Bot(command_prefix='e', intents=intents)
 client.remove_command('help')
 
 ## FUNCTIONS ##
+
+# Written by COVID-69#0457
 def read(filename: str):
 	try:
 		with open(filename, 'r') as f:
@@ -36,16 +28,19 @@ def read(filename: str):
 	except:
 		sys.exc_info()
 
-
+# Written by COVID-69#0457
 def write(data, filename: str) -> None:
 	with open(filename, 'w') as f:
 		json.dump(data, f, indent=2)
 
-
 def save():
-	print("uh")
+	write(elements, "elements.json")
+	write(reactions, "reactions.json")
+	write(players, "players.json")
+	
+	print("\033[96mSaved!\033[m")
 
-
+# Written by: Sathiya (https://stackoverflow.com/users/4402433/sathiya)
 def combine_hex_values(hex1, hex2):
 	d_items = sorted({hex1: 0.5, hex2: 0.5}.items())
 	tot_weight = sum({hex1: 0.5, hex2: 0.5}.values())
@@ -56,22 +51,20 @@ def combine_hex_values(hex1, hex2):
 	zpad = lambda x: x if len(x) == 2 else '0' + x
 	return zpad(hex(red)[2:]) + zpad(hex(green)[2:]) + zpad(hex(blue)[2:])
 
-
 def find_combination(e1, e2, dictionary: dict):
   try:
   	if f"{e1}+{e2}" in dictionary.keys():
-  		if dictionary.get(f"{e1}+{e2}"):
-  			return dictionary.get(f"{e1}+{e2}")
-  		else:
+  		try:
+  			return dictionary[f"{e1}+{e2}"]
+  		except:
   			return False
   	else:
-  		if dictionary.get(f"{e2}+{e1}"):
-  			return dictionary.get(f"{e2}+{e1}")
-  		else:
+  		try:
+  			return dictionary[f"{e2}+{e1}"]
+  		except:
   			return False
   except: 
   	return False
-
 
 def ifIn(thing: str, dictionary: dict, e1: str, e2: str):
 	try:
@@ -79,6 +72,7 @@ def ifIn(thing: str, dictionary: dict, e1: str, e2: str):
 	except:
 		return False
 
+# Based on: https://en.wikipedia.org/wiki/Color_difference#Euclidean
 def colorDistance(hex1, hex2):
 	r1 = int(hex1[0], 16) + int(hex1[1], 16)
 	g1 = int(hex1[2], 16) + int(hex1[3], 16)
@@ -109,53 +103,17 @@ def elementStats(hex):
   blue = abs(colorDistance(hex, "0000FF"))
   
   return [red, green, blue, light, dark]
-  
-#def downloadimages(query):
-#	arguments = {"keywords": query,
-#							 "format": "jpg",
-#							 "limit":1,
-#							 "print_urls":True,
-#							 "size": "medium"}
-#                 
-#	paths = response.download(arguments)
-#	return f"/downloads/{paths[0][0]}/{paths[0][1]}"
-  
+
 @atexit.register
 def exit_handler():
 	print('\033[98mBye.\033[m')
 	save()
 
 ## VARIABLES ##
-print(reactions.keys())
-
-elements["Fire"] = {
-	"date": "8/1/2021 00:00:00",
-	"color": "FFA600",
-	"generation": 1,
-	"difficulty": 0,
-	"creator": 806714339943251999
-}
-elements["Water"] = {
-	"date": "8/1/2021 00:00:00",
-	"color": "0000CC",
-	"generation": 1,
-	"difficulty": 0,
-	"creator": 806714339943251999
-}
-elements["Earth"] = {
-	"date": "8/1/2021 00:00:00",
-	"color": "96570B",
-	"generation": 1,
-	"difficulty": 0,
-	"creator": 806714339943251999
-}
-elements["Air"] = {
-	"date": "8/1/2021 00:00:00",
-	"color": "B0F5F5",
-	"generation": 1,
-	"difficulty": 0,
-	"creator": 806714339943251999
-} 
+global elements, reactions, players
+elements = read("elements.json")
+reactions = read("reactions.json")
+players = read("players.json")
 
 now = datetime.now()
 dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
@@ -511,22 +469,22 @@ async def on_message(message):
 							title=element,
 							description=f"Element {list(elements).index(element) + 1}")
 					embed.add_field(name='Time Created',
-													value=elements.get(element)["date"] + " (GMT-1)",
+													value=elements[element]["date"] + " (GMT-1)",
 													inline=False)
 					embed.add_field(name='Generation',
-													value=str(elements.get(element)["generation"]),
+													value=str(elements[element]["generation"]),
 													inline=False)
 													
 					embed.add_field(name='Complexity',
-													value=str(elements.get(element)["generation"] - 1),
+													value=str(elements[element]["generation"] - 1),
 													inline=False)
 													
 					embed.add_field(name='Difficulty',
-													value=str(elements.get(element)["difficulty"]),
+													value=str(elements[element]["difficulty"]),
 													inline=False)
 													
 					embed.add_field(name='Creator',
-													value=str(elements.get(element)["creator"]),
+													value=str(elements[element]["creator"]),
 													inline=False)
 		
 					embed.set_footer(text=f"Tip/Fun Fact: {choice(tips)}")
@@ -967,5 +925,4 @@ async def on_message(message):
 					"https://discord.com/api/oauth2/authorize?client_id=871201945677877298&permissions=0&scope=bot"
 			)
 
-keep_alive()
 client.run(token)
