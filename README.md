@@ -1,5 +1,5 @@
 # Elementals3
-Elementals 3 is a open-source discord bot thats bacically the same as [Elemental 3] (https://www.youtube.com/watch?v=rQWwfYSUckY). If you dont know whats Elemental 3, its basically where you combine elements to combine new ones voted by the community.
+Elementals 3 is a open-source discord bot thats bacically the same as [Elemental 3](https://www.youtube.com/watch?v=rQWwfYSUckY). If you dont know whats Elemental 3, its basically where you combine elements to combine new ones voted by the community.
 
 ## FAQ
 **Q: Is this hosted?**<br>
