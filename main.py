@@ -412,8 +412,6 @@ async def on_message(message):
 									diff = elements[e1]["difficulty"] + 1
 								else:
 									diff = elements[e2]["difficulty"] + 1
-								
-							del elements[f"{e1}+{e2}"]
 		
 							elements[result] = {
 									"date": dt_string,
@@ -484,7 +482,7 @@ async def on_message(message):
 													inline=False)
 													
 					embed.add_field(name='Creator',
-													value=str(elements[element]["creator"]),
+													value=client.get_user(elements[element]["creator"]).name,
 													inline=False)
 		
 					embed.set_footer(text=f"Tip/Fun Fact: {choice(tips)}")
