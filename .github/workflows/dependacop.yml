@@ -1,0 +1,4 @@
+- name: Dependacop
+  # You may pin to the exact commit or the version.
+  # uses: elestu/actions-dependacop@eb5590f634f00df2151125713708f1296125f8b7
+  uses: elestu/actions-dependacop@v1.0.4
