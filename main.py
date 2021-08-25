@@ -11,14 +11,13 @@ import os
 import atexit
 import asyncio
 
-from keepAlive import keep_alive
 from element import *
 from player import *
 
 intents = discord.Intents.default()
 intents.members = True
 
-client = commands.Bot(command_prefix='e', intents=intents)
+client = commands.Bot(command_prefix='e!', intents=intents)
 client.remove_command('help')
 
 ## FUNCTIONS ##
@@ -1074,5 +1073,4 @@ async def on_message(message):
 					"https://discord.com/api/oauth2/authorize?client_id=871201945677877298&permissions=0&scope=bot"
 			)
 
-keep_alive()
 client.run(token)
