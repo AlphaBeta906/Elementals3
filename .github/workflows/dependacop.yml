@@ -1,9 +1,0 @@
-name: Dependacop
-uses: elestu/actions-dependacop@v1.0.4
-with:
-  node-version: '10.x'
-
-on:
-  push:
-    branches:
-      - main
