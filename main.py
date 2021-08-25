@@ -11,6 +11,7 @@ import os
 import atexit
 import asyncio
 
+from keepAlive import keep_alive
 from element import *
 from player import *
 
@@ -29,7 +30,7 @@ def read(filename: str):
 			file = json.load(f)
 		return file
 	except:
-		sys.exc_info()
+		print("bruh")
 
 # Written by COVID-69#0457
 def write(data, filename: str) -> None:
@@ -129,11 +130,15 @@ a = read("elements.json")
 for element in a:
 	elements[element] = Element(a[element]["generation"], a[element]["difficulty"], a[element]["color"], a[element]["date"], a[element]["creator"])
 	
+print(elements["Fire"])
+	
 reactions = read("reactions.json")
 b = read("players.json")
 
 for player in b:
 	players[player] = Player(b[player]["elements"], b[player]["watts"], b[player]["upgrade"])
+	
+print(player)
 
 now = datetime.now()
 dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
@@ -229,6 +234,62 @@ async def on_message(message):
 			)
 	
 			await message.channel.send(embed=embed)
+		elif "+" == message.content[0]:
+			try:
+				element = message.content.replace("+", "").strip()
+				
+				try:
+					result = find_combination(element, lastElementCreated[str(message.author.id)], reactions)
+				
+					print(result)
+			
+					if element not in elements:
+						await message.channel.send("🔴 **ERROR**: Element 1 or 2 is does not exist")
+					elif element not in players[str(message.author.id)].elements:
+						await message.channel.send("🔴 **ERROR**: Element 1 or 2 is not in your inventory")
+					elif result == False:
+						await message.channel.send("🟡 **WARNING**: Result does not exist, to request one, press e!request.")
+					else:
+						if randint(1, 15) == 1:
+							superElement = True
+						else:
+							superElement = False
+							
+						try:
+							upgrade = players[str(message.author.id)]["upgrade"]
+						except:
+							upgrade = 1
+			
+						wattsAfterCreation = elements[result].getWatts(superElement, upgrade)
+						
+						if superElement:
+							a = f"Luckily, you created a super element, so, you created {wattsAfterCreation} watts."
+						else:
+							a = f"You created {wattsAfterCreation} watts!"
+			
+						embed = discord.Embed(
+							colour=int(elements[result].color, 16),
+							title=f'You created {result}',
+							description=a
+						)
+			
+						embed.set_footer(text=f"Tip/Fun Fact: {choice(tips)}")
+			
+						if result not in players[str(message.author.id)].elements:
+							players[str(message.author.id)].addElement(result)
+							
+						players[str(message.author.id)].watts += wattsAfterCreation
+			
+						await message.channel.send(embed=embed)
+						del wattsAfterCreation
+					
+					lastElementCreated[str(message.author.id)] = result
+				except:
+					await message.channel.send("🔴 **ERROR**: You should create a element before using the + command")
+			except:
+				await message.channel.send("🔴 **ERROR**: You have a missing argument in your command")
+
+			save()
 		elif ("+" in message.content or "," in message.content or "\n" in message.content) and ("=" not in message.content and "==" not in message.content):
 			print("AYYYYY")
 			try:
@@ -298,7 +359,7 @@ async def on_message(message):
 				await message.channel.send("🔴 **ERROR**: You have a missing argument in your command")
 
 			save()
-		elif "*" in message.content:
+		elif "*" == message.content[0]:
 			for x in range(1, int(message.content.replace("*", ""))):
 			  result = find_combination(lastElementCreated[str(message.author.id)], lastElementCreated[str(message.author.id)], reactions)
 	
@@ -367,13 +428,15 @@ async def on_message(message):
 					await message.channel.send("🔴 **ERROR**: Result does exist")
 				elif ifIn(result, requests, e1, e2) == True:
 					await message.channel.send("🔴 **ERROR**: Suggestion exists")
+				elif len(result) > 256:
+					await message.channel.send("🔴 **ERROR**: Element longer than 256 characters")
 				elif players[str(message.author.id)].watts < 15:
 					await message.channel.send("🟡 **WARNING**: You are too poor")
 				else:
 					if f"{e1}+{e2}" not in requests:
-						requests[f"{e1}+{e2}"] = {result: [0, message.author.id]}
+						requests[f"{e1}+{e2}"] = {result: [[], message.author.id]}
 					else:
-						requests[f"{e1}+{e2}"][result] = [0, message.author.id]
+						requests[f"{e1}+{e2}"][result] = [[], message.author.id]
 			
 					embed = discord.Embed(
 						title=f'You requested!',
@@ -404,42 +467,50 @@ async def on_message(message):
 		
 				if f"{e1}+{e2}" not in requests:
 					await message.channel.send("🔴 **ERROR**: Request does not exist, to add one use e!request")
+				elif message.author.id in requests[f"{e1}+{e2}"][result][0]:
+					await message.channel.send("🟡 **WARNING**: You already voted")
 				elif players[str(message.author.id)].watts < 10:
 					await message.channel.send("🟡 **WARNING**: You are too poor")
 				else:
-					players[str(message.author.id)]["watts"] -= 10
+					players[str(message.author.id)].watts -= 10
 		
-					requests[f"{e1}+{e2}"][result][0] += 1
+					if message.author.id not in [806714339943251999, 511108607043960843]:
+						requests[f"{e1}+{e2}"][result][0].append(message.author.id)
+					else:
+						requests[f"{e1}+{e2}"][result][0].append("HAHA MONEY GO BRRRRR")
+					
 		
-					if requests[f"{e1}+{e2}"][result][0] == 2:
+					if len(requests[f"{e1}+{e2}"][result][0]) == 2:
 						if result not in elements:
 							dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
 		
-							if elements[e1]["generation"] > elements[e2]["generation"]:
-								gen = elements[e1]["generation"]
+							if elements[e1].generation > elements[e2].generation:
+								gen = elements[e1].generation
 							else:
-								gen = elements[e2]["generation"]
+								gen = elements[e2].generation
 								
 							if e1 == e2:
-								diff = elements[e1]["difficulty"]
+								diff = elements[e1].difficulty
 							else:
-								if elements[e1]["difficulty"] > elements[e2]["difficulty"]:
-									diff = elements[e1]["difficulty"] + 1
+								if elements[e1].difficulty > elements[e2].difficulty:
+									diff = elements[e1].difficulty + 1
 								else:
-									diff = elements[e2]["difficulty"] + 1
+									diff = elements[e2].difficulty + 1
+									
+							print(elements["Fire"])
 		
-							elements[result] = {
-									"date": dt_string,
-									"color": combine_hex_values(elements[e1]["color"], elements[e2]["color"]),
-									"generation": gen + 1,
-									"difficulty": diff,
-									"creator": requests[f"{e1}+{e2}"][result][1]
-							}
+							elements[result] = Element(
+								  date = dt_string,
+									color = combine_hex_values(elements[e1].color, elements[e2].color),
+									generation = gen + 1,
+								  difficulty = diff,
+									creator = requests[f"{e1}+{e2}"][result][1]
+							)
 		
 							del gen, dt_string
 		
 							embed = discord.Embed(title=f"You voted!",
-																		color=int(elements[result]["color"], 16),
+																		color=int(elements[result].color, 16),
 																		description="You created a new element!")
 		
 							await message.channel.send(embed=embed)
@@ -450,7 +521,7 @@ async def on_message(message):
 											name=f"e!help | There are {len(elements)} elements!"))
 						else:
 							embed = discord.Embed(title=f"You voted!",
-																		color=int(elements[result]["color"], 16),
+																		color=int(elements[result].color, 16),
 																		description="You created a new result!")
 		
 							await message.channel.send(embed=embed)
@@ -468,46 +539,57 @@ async def on_message(message):
 			#	await message.channel.send("🔴 **ERROR**: You have a missing argument in your command")
 			save()
 		elif "?" == message.content[0] or "e!info" in message.content:
-			try:
+			if message.content not in ["?", "e!info"]:
 				if "e!info" in message.content:
 					element = message.content.replace("e!info", "").title().strip()
 				else:
 					element = message.content.replace("?", "").title().strip()
+			else:
+				element = choice(list(elements))
 				
-				if element not in elements:
-					await message.channel.send("🔴 **ERROR**: Element does not exist")
-				else:
-					embed = discord.Embed(
-							colour=int(elements[element].color, 16),
-							title=element,
-							description=f"Element {list(elements).index(element) + 1}")
-					embed.add_field(name='Time Created',
-													value=elements[element].date + " (GMT-1)",
-													inline=False)
-					embed.add_field(name='Generation',
-													value=str(elements[element].date),
-													inline=False)
+			if element not in elements:
+				await message.channel.send("🔴 **ERROR**: Element does not exist")
+			else:
+				embed = discord.Embed(
+					colour=int(elements[element].color, 16),
+					title=element,
+					description=f"Element {list(elements).index(element) + 1}"
+				)
+				embed.add_field(
+					name='Time Created',
+					value=elements[element].date + " (GMT-1)",
+					inline=False
+				)
+				embed.add_field(
+					name='Generation',
+					value=str(elements[element].generation),
+					inline=False
+			  )
 													
-					embed.add_field(name='Complexity',
-													value=str(elements[element].generation - 1),
-													inline=False)
+				embed.add_field(
+					name='Complexity',
+					value=str(elements[element].generation - 1),
+					inline=False
+				)
 													
-					embed.add_field(name='Difficulty',
-													value=str(elements[element].difficulty),
-													inline=False)
+				embed.add_field(
+					name='Difficulty',
+				  value=str(elements[element].difficulty),
+					inline=False
+				)
 													
-					embed.add_field(name='Creator',
-													value=client.get_user(elements[element].creator).name,
-													inline=False)
+				embed.add_field(
+					name='Creator',
+					value=client.get_user(elements[element].creator).name,
+					inline=False
+				)
 		
-					embed.set_footer(text=f"Tip/Fun Fact: {choice(tips)}")
+				embed.set_footer(text=f"Tip/Fun Fact: {choice(tips)}")
 					
-					#downloadFile = downloadimages(element)
-					#file = discord.File(downloadFile, filename="image.jpg")
+				#downloadFile = downloadimages(element)
+				#file = discord.File(downloadFile, filename="image.jpg")
 		
-					await message.channel.send(embed=embed)
-			except:
-			  await message.channel.send("🔴 **ERROR**: You have a missing argument in your command")
+				await message.channel.send(embed=embed)
 		elif message.content == "e!stats":
 			amount = 0
 			
@@ -519,32 +601,50 @@ async def on_message(message):
 			
 			del amount
 		elif "e!elemlist" in message.content:
+			if len(elements) % 25 == 0:
+				maxIndex = len(elements) / 25
+			else:
+				maxIndex = int(len(elements) / 25) + 1
+
 			try:
-				index = int(message.content.replace("e!elemlist", ""))
-				newIndex = index - 1
+				index = int(message.content.replace("e!elemlist", "").strip())
 			except:
 				index = 1
-				newIndex = 0
-	
+				
+			if index > maxIndex:
+				index = maxIndex
+
+			newIndex = index - 1
+			
 			try:
-				embed = discord.Embed(colour=0xff0048,
-															title=f"Elements (Index: {index})",
-															description="\n".join(list(elements)[(newIndex) * 25:(newIndex) * 25 + 25]))
+				embed = discord.Embed(
+			    colour=0xff0048,
+				  title=f"Elements (Index:{index} / {maxIndex})",
+				  description="\n".join(list(elements)[0+newIndex*25:newIndex*25+25])
+			  )
 			except:
-				embed = discord.Embed(colour=0xff0048,
-															title=f"Elements (Index: {index})",
-															description="\n".join(list(elements)[(newIndex) * 25:len(elements) - 1]))
+				embed = discord.Embed(
+			  	colour=0xff0048,
+				  title=f"Elements (Index:{index} / {maxIndex})",
+			    description="\n".join(list(elements)[0+newIndex*50:len(elements)])
+			   )
 			finally:
-				embed.set_footer(text=f"Tip/Fun Fact: {choice(tips)}")
-				await message.channel.send(embed=embed)
+			  embed.set_footer(text=f"Tip/Fun Fact: {choice(tips)}")
+			  
+			  await message.channel.send(embed=embed)
 		elif "e!elemsort" in message.content:
 			try:
 				value = message.content.replace("e!elemsort", "").strip()
 				
 				try:
-					elements2 = {}
-					for element in elements:
-						elements2[element] = elements[element][value]
+					if value == "difficulty":
+					  elements2 = {}
+					  for element in elements:
+						  elements2[element] = elements[element].difficulty
+					else:
+					 	 elements2 = {}
+					 	 for element in elements:
+						   elements2[element] = elements[element].generation
 						
 					elements2 = dict(sorted(elements2.items(), key=lambda x: x[1], reverse=True))
 						
@@ -561,58 +661,74 @@ async def on_message(message):
 				await message.channel.send(embed=embed)
 			except:
 				await message.channel.send("🔴 **ERROR**: You have a missing argument in your command")
-		elif "e!inv" in message.content:
+		elif "e!inv" in message.content:	
 			try:
 				user = client.get_user(message.mentions[0].id)
 			except:
 				user = message.author
-				
-			if str(user.id) not in players:
-				players[str(user.id)] = {
-						"elements": ["Fire", "Air", "Earth", "Water"],
-						"watts": 100,
-						"upgrade": 0
-				}
-	
-			embed = discord.Embed(
-				description=", ".join(players[str(user.id)]["elements"]),
-				colour=0x03fc56,
-				title=f"Inventory of {user.name}"
-			)
-	
-			embed.set_footer(text=f"Tip/Fun Fact: {choice(tips)}")
-	
-			await message.channel.send(embed=embed)
-		elif "e!hint" in message.content:
+
+			if len(players[str(user.id)].elements) % 25 == 0:
+				maxIndex = len(players[str(user.id)].elements) / 25
+			else:
+				maxIndex = int(len(players[str(user.id)].elements) / 25) + 1
+
 			try:
-				element = message.content.replace("e!hint", "").title().strip()
+				index = int(message.content.replace(f"e!inv", "").replace(f"<@{user.id}>", "").strip())
 			except:
-				await message.channel.send("🔴 **ERROR**: You have a missing argument in your command")
+				index = 1
+
+			if str(user.id) not in players:
+				players[str(user.id)] = Player()
+				
+			if index > maxIndex:
+				index = maxIndex
+				
+			newIndex = index - 1
 	
+			try:
+				embed = discord.Embed(
+			    colour=0x7242f5,
+				  title=f"Inventory of {user.name} (Index:{index}/{maxIndex})",
+				  description="\n".join(list(players[str(user.id)].elements)[0+newIndex*25:newIndex*25+25])
+			  )
+			except:
+				embed = discord.Embed(
+			  	colour=0x7242f5,
+				  title=f"Inventory of {user.name} (Index:{index}/{maxIndex})",
+			    description="\n".join(list(players[str(user.id)].elements)[0+newIndex*50:len(elements)])
+			   )
+			finally:
+			  embed.set_footer(text=f"Tip/Fun Fact: {choice(tips)}")
+			  
+			  await message.channel.send(embed=embed)
+		elif "e!hint" in message.content:
+			if message.content != "e!hint":
+				element = message.content.replace("e!hint", "").title().strip()
+			else:
+				element = choice(list(elements))
+				
 			a = ""
 	
 			if element not in reactions and element not in elements:
 				await message.channel.send("🔴 **ERROR**: Element does not exist")
-			elif element not in reactions and element in elements:
+			elif element in ["Water", "Earth", "Air"]:
 				await message.channel.send("🔴 **ERROR**: Primoridial elements doesn't have any solution")
-			elif players[str(message.author.id)]["watts"] < 20:
+			elif players[str(message.author.id)].watts < 20:
 				message.channel.send("🟡 **WARNING**: You are too poor")
 			else:
-				players[str(message.author.id)]["watts"] -= 20
+				players[str(message.author.id)].watts -= 20
 	
-				for reaction in reactions[element]:
-					if randint(1, 2) == 1:
-						reaction = {"e1": reaction["e2"], "e2": reaction["e1"]}
-	
-					if (reaction["e1"] in players[str(
-							message.author.id)]["elements"]) and (
-									reaction["e2"] in players[str(
-											message.author.id)]["elements"]):
-						a += "\n✅ " + reaction["e1"] + "+" + str(
-								len(reaction["e2"]) * "?")
-					else:
-						a += "\n❌ " + reaction["e1"] + "+" + str(
-								len(reaction["e2"]) * "?")
+				for reaction in reactions:
+					if reactions[reaction] == element:
+						if randint(1, 2) == 1:
+							reaction = {"e1": reaction.split("+")[1], "e2": reaction.split("+")[0]}
+						else:
+							reaction = {"e1": reaction.split("+")[0], "e2": reaction.split("+")[1]}
+							
+						if (reaction["e1"] in players[str(message.author.id)].elements) and (reaction["e2"] in players[str(message.author.id)].elements):
+							a += "\n✅ " + reaction["e1"] + "+" + str(len(reaction["e2"]) * "?")
+						else:
+							a += "\n❌ " + reaction["e1"] + "+" + str(len(reaction["e2"]) * "?")
 	
 				embed = discord.Embed(description=a,
 															colour=0xdecd49,
@@ -624,33 +740,33 @@ async def on_message(message):
 			
 			save()
 		elif "e!reveal" in message.content:
-			try:
+			if message.content != "e!reveal":
 				element = message.content.replace("e!reveal", "").title().strip()
-			except:
-				await message.channel.send("🔴 **ERROR**: You have a missing argument in your command")
+			else:
+				element = choice(list(elements))
 	
 			a = ""
 	
 			if element not in reactions and element not in elements:
 				await message.channel.send("🔴 **ERROR**: Element does not exist")
-			elif element not in reactions and element in elements:
+			elif element in ["Water", "Earth", "Air"]:
 				await message.channel.send("🔴 **ERROR**: Primoridial elements doesn't have any solution")
-			elif players[str(message.author.id)]["watts"] < 40:
+			elif players[str(message.author.id)].watts < 40:
 				message.channel.send("🟡 **WARNING**: You are too poor")
 			else:
-				players[str(message.author.id)]["watts"] -= 40
-	
-				for reaction in reactions[element]:
-					if randint(1, 2) == 1:
-						reaction = {"e1": reaction["e2"], "e2": reaction["e1"]}
-	
-					if (reaction["e1"] in players[str(
-							message.author.id)]["elements"]) and (
-									reaction["e2"] in players[str(
-											message.author.id)]["elements"]):
-						a += "\n✅ " + reaction["e1"] + "+" + reaction["e2"]
-					else:
-						a += "\n❌ " + reaction["e1"] + "+" + reaction["e2"]
+				players[str(message.author.id)].watts -= 40
+				
+				for reaction in reactions:
+				  if reactions[reaction] == element:
+				  	if randint(1, 2) == 1:
+				  		reaction = {"e1": reaction.split("+")[1], "e2": reaction.split("+")[0]}
+				  	else:
+				  		reaction = {"e1": reaction.split("+")[0], "e2": reaction.split("+")[1]}
+				  		
+				  	if (reaction["e1"] in players[str(message.author.id)].elements) and (reaction["e2"] in players[str(message.author.id)].elements):
+				  	  a += "\n✅ " + reaction["e1"] + "+" + reaction["e2"]
+				  	else:
+				  		a += "\n❌ " + reaction["e1"] + "+" + reaction["e2"]
 	
 				embed = discord.Embed(description=a,
 															colour=0xdecd49,
@@ -662,10 +778,10 @@ async def on_message(message):
 			
 			save()
 		elif message.content == "e!active":
-			if players[str(message.author.id)]["watts"] < 20:
+			if players[str(message.author.id)].watts < 20:
 				message.channel.send("🟡 **WARNING**: You are too poor")
 			else:
-				players[str(message.author.id)]["watts"] -= 20
+				players[str(message.author.id)].watts -= 20
 	
 				if len(requests) != 0:
 					a = []
@@ -751,15 +867,15 @@ async def on_message(message):
 	
 			save()
 		elif "e!bal" in message.content:
-			if message.content == "e!inv":
+			try:
 				user = client.get_user(message.mentions[0].id)
-			else:
+			except:
 				user = message.author
 	
 			embed = discord.Embed(colour=0x1cb7ff, title=f"Balance of {user.name}")
 	
 			embed.add_field(name='Watts',
-											value=players[str(user.id)]["watts"],
+											value=players[str(user.id)].watts,
 											inline=True)
 	
 			await message.channel.send(embed=embed)
@@ -779,8 +895,8 @@ async def on_message(message):
 			player = [user2.id, message.author.id]
 			playerping = [user2, message.author]
 			playerhp = [
-					int(players[str(message.author.id)]["watts"] * 0.01),
-					int(players[str(user2.id)]["watts"] * 0.01)
+					int(players[str(message.author.id)].watts * 0.01),
+					int(players[str(user2.id)].watts * 0.01)
 			]
 	
 			def check(m):
@@ -834,7 +950,7 @@ async def on_message(message):
 									msg = await client.wait_for('message', check=check)
 	
 									if msg.content.title() in players[str(
-											player[person])]["elements"]:
+											player[person])].elements:
 										playerelem[person] = msg.content.title()
 										break
 	
@@ -844,11 +960,11 @@ async def on_message(message):
 						elif msg.content.lower() == "attack":
 							print(elementStats("FFF000")[2])
 							
-							weaknesses = elementStats(elements[playerelem[(person + 1) % 2]]["color"])[3] - elementStats(elements[playerelem[(person + 1) % 2]]["color"])[4]
+							weaknesses = elementStats(elements[playerelem[(person + 1) % 2]].color)[3] - elementStats(elements[playerelem[(person + 1) % 2]].color)[4]
 
-							atk = (elements[playerelem[person]]["generation"] * elementStats(elements[playerelem[person]]["color"])[0]) + randint(1, 10) + weaknesses
+							atk = (elements[playerelem[person]].generation * elementStats(elements[playerelem[person]].color)[0]) + randint(1, 10) + weaknesses
 							
-							if randint(1, 16) > elementStats(elements[playerelem[(person + 1) % 2]]["color"])[2]:
+							if randint(1, 16) > elementStats(elements[playerelem[(person + 1) % 2]].color)[2]:
 								embed = discord.Embed(
 					  			colour=discord.Color.red(),
 									title=f"ATTACK",
@@ -869,7 +985,7 @@ async def on_message(message):
 							break
 						
 						elif msg.content.lower() == "heal":
-							health = (elements[playerelem[index % 2]]["generation"] * elementStats(elements[playerelem[index % 2]]["color"])[1]) + randint(1, 10)
+							health = (elements[playerelem[index % 2]].generation * elementStats(elements[playerelem[index % 2]].color)[1]) + randint(1, 10)
 													
 							embed = discord.Embed(
 					  		colour=discord.Color.green(),
@@ -898,37 +1014,65 @@ async def on_message(message):
 						break
 	
 					index += 1
-					
-		elif "to" in message.content:
+		elif "e!leaderboard" in message.content:
 			try:
-				e1 = message.content.split("to")[0].title().strip()
-				e2 = message.content.split("to")[1].title().strip()
+				value = message.content.replace("e!leaderboard", "").strip()
+				print(value)
 				
-				if e1 not in elements or e2 not in elements:
-					await message.channel.send("🔴 **ERROR**: Element 1 or 2 does'nt exist")
-				else:
-					colorDistances = abs(colorDistance(elements[e1]["color"], elements[e2]["color"]))
+				if value == "elem":
+					value = "element inventory length"
+					leaderboard = {}
 					
-					if elements[e1]["generation"] > elements[e2]["generation"]:
-						generationDistance = elements[e1]["generation"] - elements[e2]["generation"]
-					else:
-						generationDistance = elements[e2]["generation"] - elements[e1]["generation"]
-						
-					embed = discord.Embed(
-						colour=0x777777,
-						title=f"Distance between {e1} and {e2}",
-						description=f"The distance between {e1} and {e2} is {colorDistances} color-meters and {generationDistance} generations."
-					)
-				
-					embed.set_footer(text=f"Tip/Fun Fact: {choice(tips)}")
-			
-					await message.channel.send(embed=embed)
+					for player in players:
+						leaderboard[player] = len(players[player].elements)
+				else:
+					value = "amount of watts"
+					leaderboard = {}
+					
+					for player in players:
+						leaderboard[player] = players[player].watts
 			except:
-				await message.channel.send("🔴 **ERROR**: You have a missing argument in your command")
+				value = "element inventory length"
+				leaderboard = {}
 				
+				for player in players:
+					leaderboard[player] = len(players[player].elements)
+				  
+			a = f"This leaderboard is measured in {value}\n"
+						
+			leaderboard = dict(sorted(leaderboard.items(), key=lambda x: x[1], reverse=True))
+
+			index = 1
+			for player in list(leaderboard)[0:10]:
+				a += f"\n**#{index} {client.get_user(int(player)).name}**: {leaderboard[player]}"
+				index += 1
+
+			embed = discord.Embed(
+				colour=0x909090,
+				title="Leaderboard",
+				description=a
+			)
+
+			await message.channel.send(embed=embed)
+		elif "e!profile" in message.content:
+			try:
+				user = client.get_user(message.mentions[0].id)
+			except:
+				user = message.author
+
+			embed = discord.Embed(
+        colour = 0xf5c542,
+				title = f"Profile of {user.name}"
+    	)
+			embed.add_field(name='Watts',value=players[str(user.id)].watts, inline=False)
+			embed.add_field(name='Total Elements',value=str(len(players[str(user.id)].elements)) + "/" + str(len(elements)), inline=False)
+			embed.add_field(name='Percentage', value=str(int((len(players[str(user.id)].elements) / len(elements)) * 100)) + "%", inline=False)
+
+			await message.channel.send(embed=embed)
 		elif message.content == "e!add":
 			await message.channel.send(
 					"https://discord.com/api/oauth2/authorize?client_id=871201945677877298&permissions=0&scope=bot"
 			)
 
+keep_alive()
 client.run(token)
