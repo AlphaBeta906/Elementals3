@@ -3,11 +3,12 @@
 
 import discord
 from discord.ext import commands
-import json
+from discord.ext import tasks
 import sys
+import json
 from datetime import datetime
 from random import randint, choice
-import os
+from random import random as random_sort
 import atexit
 import asyncio
 
@@ -17,7 +18,7 @@ from player import *
 intents = discord.Intents.default()
 intents.members = True
 
-client = commands.Bot(command_prefix='e!', intents=intents)
+client = commands.Bot(command_prefix='e', intents=intents)
 client.remove_command('help')
 
 ## FUNCTIONS ##
@@ -45,9 +46,10 @@ def save():
 	for player in players:
 		b[player] = players[player].__dict__()
 		
-	write(a, "elements.json")
-	write(reactions, "reactions.json")
-	write(b, "players.json")
+	write(a, "database/elements.json")
+	write(reactions, "database/reactions.json")
+	write(b, "database/players.json")
+	write(botchannels, "database/botchannels.json")
 	
 	print("\033[96mSaved!\033[m")
 
@@ -62,26 +64,20 @@ def combine_hex_values(hex1, hex2):
 	zpad = lambda x: x if len(x) == 2 else '0' + x
 	return zpad(hex(red)[2:]) + zpad(hex(green)[2:]) + zpad(hex(blue)[2:])
 
-def find_combination(e1, e2, dictionary: dict):
-  try:
-  	if f"{e1}+{e2}" in dictionary.keys():
-  		try:
-  			return dictionary[f"{e1}+{e2}"]
-  		except:
-  			return False
-  	else:
-  		try:
-  			return dictionary[f"{e2}+{e1}"]
-  		except:
-  			return False
-  except: 
-  	return False
-
-def ifIn(thing: str, dictionary: dict, e1: str, e2: str):
-	try:
-		return thing in dictionary[f"{e1}+{e2}"]
-	except:
+def find_combination(inputs: list, dictionary: dict):
+	inputs = "+".join(sorted(inputs))
+	
+	if inputs in dictionary:
+		return dictionary[inputs]
+	else:
 		return False
+
+def ifIn(things: list, l: list):
+	for thing in things:
+		if thing not in l:
+			return False
+			
+	return True
 
 # Based on: https://en.wikipedia.org/wiki/Color_difference#Euclidean
 def colorDistance(hex1, hex2):
@@ -114,30 +110,40 @@ def elementStats(hex):
   blue = abs(colorDistance(hex, "0000FF"))
   
   return [red, green, blue, light, dark]
-
+  
+def e(inputs: str, result:str, dictionary: dict):
+	try:
+		print(dictionary[inputs][results])
+		return True
+	except KeyError:
+		return False
+		
+def checkList(lst: list):
+	return len(set(lst)) == 1
+	
 @atexit.register
 def exit_handler():
 	print('\033[98mBye.\033[m')
 	save()
 
 ## VARIABLES ##
-global elements, reactions, players
+global elements, reactions, players, botchannels
 elements = {}
 players = {}
 
-a = read("elements.json")
+a = read("database/elements.json")
 for element in a:
 	elements[element] = Element(a[element]["generation"], a[element]["difficulty"], a[element]["color"], a[element]["date"], a[element]["creator"])
 	
 print(elements["Fire"])
 	
-reactions = read("reactions.json")
-b = read("players.json")
+reactions = read("database/reactions.json")
+b = read("database/players.json")
 
 for player in b:
-	players[player] = Player(b[player]["elements"], b[player]["watts"], b[player]["upgrade"])
+	players[player] = Player(b[player]["elements"], b[player]["watts"], b[player]["upgrade"], b[player]["lpt"], b[player]["taxEvaded"])
 	
-print(player)
+botchannels = read("database/botchannels.json")
 
 now = datetime.now()
 dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
@@ -147,8 +153,6 @@ del dt_string
 requests = {}
 a = ""
 lastElementCreated = {}
-
-token = os.environ['token']
 
 tips = [
     'Felling stuck? You should try going to Wikipeidia or Little Alchemy 2 to find how a cirtain element is made.',
@@ -165,6 +169,19 @@ tips = [
 ]
 
 
+## TASKS ##
+@tasks.loop(hours=24)
+async def tax_check():
+	if now.strtime("%d") == 1: 
+		for player in players:
+			await client.send_message(client.get_user_info(player), "TAX TIME!")
+			if player == 806714339943251999:
+				continue
+			elif players[player].lpt == (int(players[player].lpt) + 1) % 12:
+				players[player].taxEvaded += 1
+				
+		print("tax")
+	
 ## EVENTS ##
 @client.event
 async def on_ready():
@@ -181,50 +198,88 @@ async def on_ready():
 @client.event
 async def on_message(message):
 	if message.author.id != client.user.id:
-		if message.content == "e!help":
+		if message.content == "e!help" and message.channel.id in botchannels:
 			embed = discord.Embed(colour=0x6a0dad, title='Help')
-			embed.add_field(name='e!combine {e1} {e2}',
-												value="Combine two elements.\nAliases: c",
-												inline=True)
-			embed.add_field(name='e!request {e1} {e2} {result}',
-												value="Request a result. Costs 15 watts.\nAliases: r",
-												inline=True)
-			embed.add_field(name='e!upvote {e1} {e2} {result}',
-												value="Upvote a request. Costs 10 watts.\nAliases: u",
-												inline=True)
-			embed.add_field(name='e!downvote {e1} {e2} {result}',
-													value="Downvote a request. Costs 10 watts.\nAliases: d",
-												inline=True)
-			embed.add_field(name='e!elemlist [index]',
-												value="Show all elements.\nAliases: e, elements",
-												inline=True)
 			embed.add_field(
-						name='e!hint {element}',
-						value="Get a hint of how to create a element. Costs 20 watts.",
-						inline=True)
-			embed.add_field(name='e!inv [user]',
-											value="Shows inventory of a user.\nAliases: inventory",
-											inline=True)
+				name='{e1}+{e2}',
+				value="Combine two elements.",
+				inline=True
+			)
 			embed.add_field(
-						name='e!active',
-						value="Shows 10 random actve requests. Costs 25 watts.\nAliases: re",
-						inline=True)
-			embed.add_field(name='e!bal [user]',
-												value="Shows balance of a user.\nAliases: balance",
-												inline=True)
+				name='+{elem}',
+				value="Combine the element, with the last previous element.",
+				inline=True
+			)
 			embed.add_field(
-						name='e!upgrade [upgrade]',
-						value=
-						"Shows the upgrade level of a user and upgrade's their level aswell.\nAliases: up",
-						inline=True)
-			embed.add_field(name='e!double {element}',
-												value="Combines the element to itself.\nAliases: du",
-												inline=True)
+				name='++{elem}',
+				value="Combines the element by itself.",
+				inline=True
+			)
+			embed.add_field(
+				name='*{n}',
+				value="Multiplies the last created element by itself.",
+				inline=True
+			)
+			embed.add_field(
+				name='{e1}+{e2}={result}',
+				value="Requests the result. Costs 15 watts.",
+				inline=True
+			)
+			embed.add_field(
+				name='{e1}+{e2}=={result}',
+				value="Upvotes the result. Costs 10 watts.",
+				inline=True
+			)
+			embed.add_field(
+				name='?[element] or e!info [element]',
+				value="Gets info of two elements.",
+				inline=True
+			)
+			embed.add_field(
+				name='e!elemlist [index]',
+				value="Gets a list of elements in a cirtain index.",
+				inline=True
+			)
+			embed.add_field(
+				name='e!elemsort [sortby]',
+				value="Gets the top 25 elements by the sorting variable.",
+				inline=True
+			)
+			embed.add_field(
+				name='e!inv [user]',
+				value="Gets the inventory of a user.",
+				inline=True
+			)
+			embed.add_field(
+				name='e!bal [user]',
+				value="Gets the balance of a user.",
+				inline=True
+			)
+			embed.add_field(
+				name='e!active',
+				value="Gets all active requests (very buggy).",
+				inline=True
+			)
+			embed.add_field(
+				name='e!buy {element}',
+				value="Buy a element",
+				inline=True
+			)
+			embed.add_field(
+				name='e!sell {element}',
+				value="Sell a element",
+				inline=True
+			)
+			embed.add_field(
+				name='e!battle {user}',
+				value="Battle a user",
+				inline=True
+			)
 	
 			embed.set_footer(text="{} is an required argument while [] is optional")
 	
 			await message.channel.send(embed=embed)
-		elif message.content == "e!intro":
+		elif message.content == "e!intro" and message.channel.id in botchannels:
 			embed = discord.Embed(
 		    colour=0x0000a0,
 		    title='Hello!',
@@ -233,92 +288,22 @@ async def on_message(message):
 			)
 	
 			await message.channel.send(embed=embed)
-		elif "+" == message.content[0]:
+		elif "+" == message.content[0] and "+" == message.content[1] and message.channel.id in botchannels:
 			try:
-				element = message.content.replace("+", "").strip()
+				element = message.content.replace("++", "").strip()
 				
-				try:
-					result = find_combination(element, lastElementCreated[str(message.author.id)], reactions)
-				
-					print(result)
+				result = find_combination([element, element], reactions)
 			
-					if element not in elements:
-						await message.channel.send("🔴 **ERROR**: Element 1 or 2 is does not exist")
-					elif element not in players[str(message.author.id)].elements:
-						await message.channel.send("🔴 **ERROR**: Element 1 or 2 is not in your inventory")
-					elif result == False:
-						await message.channel.send("🟡 **WARNING**: Result does not exist, to request one, press e!request.")
-					else:
-						if randint(1, 15) == 1:
-							superElement = True
-						else:
-							superElement = False
-							
-						try:
-							upgrade = players[str(message.author.id)]["upgrade"]
-						except:
-							upgrade = 1
-			
-						wattsAfterCreation = elements[result].getWatts(superElement, upgrade)
-						
-						if superElement:
-							a = f"Luckily, you created a super element, so, you created {wattsAfterCreation} watts."
-						else:
-							a = f"You created {wattsAfterCreation} watts!"
-			
-						embed = discord.Embed(
-							colour=int(elements[result].color, 16),
-							title=f'You created {result}',
-							description=a
-						)
-			
-						embed.set_footer(text=f"Tip/Fun Fact: {choice(tips)}")
-			
-						if result not in players[str(message.author.id)].elements:
-							players[str(message.author.id)].addElement(result)
-							
-						players[str(message.author.id)].watts += wattsAfterCreation
-			
-						await message.channel.send(embed=embed)
-						del wattsAfterCreation
-					
-					lastElementCreated[str(message.author.id)] = result
-				except:
-					await message.channel.send("🔴 **ERROR**: You should create a element before using the + command")
-			except:
-				await message.channel.send("🔴 **ERROR**: You have a missing argument in your command")
-
-			save()
-		elif ("+" in message.content or "," in message.content or "\n" in message.content) and ("=" not in message.content and "==" not in message.content):
-			print("AYYYYY")
-			try:
-				if "+" in message.content:
-					e1 = message.content.split("+")[0].title().strip()
-					e2 = message.content.split("+")[1].title().strip()
-				elif "\n" in message.content:
-					e1 = message.content.split("\n")[0].title().strip()
-					e2 = message.content.split("\n")[1].title().strip()
-				else:
-					e1 = message.content.split(",")[0].title().strip()
-					e2 = message.content.split(",")[1].title().strip()
-					
-				if str(message.author.id) not in players.keys():
-					players[str(message.author.id)] = Player()
-				else:
-					print("HELEOOEJIDH")
-		
-				result = find_combination(e1, e2, reactions)
-				
-				print(result)
-		
-				if (e1 not in elements) or (e2 not in elements):
+				if element not in elements:
 					await message.channel.send("🔴 **ERROR**: Element 1 or 2 is does not exist")
-				elif (e1 not in players[str(
-						message.author.id)].elements) or (e2 not in players[str(
-								message.author.id)].elements):
+				elif element not in players[str(message.author.id)].elements:
 					await message.channel.send("🔴 **ERROR**: Element 1 or 2 is not in your inventory")
 				elif result == False:
-					await message.channel.send("🟡 **WARNING**: Result does not exist, to request one, press e!request.")
+					await message.channel.send(f"🟡 **WARNING**: Result does not exist, to request one, do {element}+{element}=Your result!.")
+				elif result in players[str(message.author.id)].elements:
+					await message.channel.send(f"🔷 **INFO**: You already have {result}")
+					
+					lastElementCreated[str(message.author.id)] = result
 				else:
 					if randint(1, 15) == 1:
 						superElement = True
@@ -354,88 +339,222 @@ async def on_message(message):
 					del wattsAfterCreation
 		
 					lastElementCreated[str(message.author.id)] = result
-			except:
+			except IndexError:
+				await message.channel.send("🔴 **ERROR**: You have a missing argument in your command")
+		elif "+" == message.content[0] and message.channel.id in botchannels:
+			try:
+				element = message.content.replace("+", "").strip()
+				
+				try:
+					result = find_combination([element, lastElementCreated[str(message.author.id)]], reactions)
+				
+					print(result)
+			
+					if element not in elements:
+						await message.channel.send("🔴 **ERROR**: Element 1 or 2 is does not exist")
+					elif element not in players[str(message.author.id)].elements:
+						await message.channel.send("🔴 **ERROR**: Element 1 or 2 is not in your inventory")
+					elif result == False:
+						await message.channel.send(f"🟡 **WARNING**: Result does not exist, to request one, do {element}+{element}=Your result!")
+					elif result in players[str(message.author.id)].elements:
+					  await message.channel.send(f"🔷 **INFO**: You already have {result}")
+					else:
+						if randint(1, 15) == 1:
+							superElement = True
+						else:
+							superElement = False
+							
+						try:
+							upgrade = players[str(message.author.id)]["upgrade"]
+						except:
+							upgrade = 1
+			
+						wattsAfterCreation = elements[result].getWatts(superElement, upgrade)
+						
+						if superElement:
+							a = f"Luckily, you created a super element, so, you created {wattsAfterCreation} watts."
+						else:
+							a = f"You created {wattsAfterCreation} watts!"
+			
+						embed = discord.Embed(
+							colour=int(elements[result].color, 16),
+							title=f'You created {result}',
+							description=a
+						)
+			
+						embed.set_footer(text=f"Tip/Fun Fact: {choice(tips)}")
+			
+						if result not in players[str(message.author.id)].elements:
+							players[str(message.author.id)].addElement(result)
+							
+						players[str(message.author.id)].watts += wattsAfterCreation
+			
+						await message.channel.send(embed=embed)
+						del wattsAfterCreation
+					
+					lastElementCreated[str(message.author.id)] = result
+				except IndexError:
+					await message.channel.send("🔴 **ERROR**: You should create a element before using the + command")
+			except IndexError:
 				await message.channel.send("🔴 **ERROR**: You have a missing argument in your command")
 
 			save()
-		elif "*" == message.content[0]:
-			for x in range(1, int(message.content.replace("*", ""))):
-			  result = find_combination(lastElementCreated[str(message.author.id)], lastElementCreated[str(message.author.id)], reactions)
-	
-			  if result == False:
-				  await message.channel.send("🟡 **WARNING**: Result does not exist, to request one, press e!request.")
-			  else:			
-				  if randint(1, 15) == 1:
-				  	superElement = True
-				  else:
-				  	superElement = False
-				  	
-				  try:
-				  	upgrade = players[str(message.author.id)]["upgrade"]
-				  except:
-				  	upgrade = 1
-				  	
-				  wattsAfterCreation = elements[result].getWatts(superElement, upgrade)
-				  
-				  if superElement:
-				  	a = f"Luckily, you created a super element, so, you created {wattsAfterCreation} watts."
-				  else:
-				  	a = f"You created {wattsAfterCreation} watts!"
-	
-				  embed = discord.Embed(
-					  colour=int(elements[result].color, 16),
-					  title=f'You created {result}',
-					  description=a
-			  	)
-	
-				  embed.set_footer(text=f"Tip/Fun Fact: {choice(tips)}")
-	
-				  if result not in players[str(message.author.id)].elements:
-					  players[str(message.author.id)].addElement(result)
-	
-				  players[str(message.author.id)].watts += wattsAfterCreation
-	
-				  await message.channel.send(embed=embed)
-				  del wattsAfterCreation
-	
-				  lastElementCreated[str(message.author.id)] = result
-		elif ("+" in message.content or ", " in message.content or "\n" in message.content) and ("=" in message.content and "==" not in message.content):
-			if str(message.author.id) not in players:
-			  players[str(message.author.id)] = Player()
-			else:
-				print("HELEOOEJIDH")
-					
+		elif ("+" in message.content or "," in message.content or "\n" in message.content) and ("=" not in message.content and "==" not in message.content) and message.channel.id in botchannels:
+			inputs = []
+			
 			try:
 				if "+" in message.content:
-					e1 = message.content.split("=")[0].split("+")[0].title().strip()
-					e2 = message.content.split("=")[0].split("+")[1].title().strip()
+					for element in message.content.split("+"):
+						inputs.append(element.title().strip())
 				elif "\n" in message.content:
-					e1 = message.content.split("=")[0].split("\n")[0].title().strip()
-					e2 = message.content.split("=")[0].split("\n")[1].title().strip()
+					for element in message.content.split("\n"):
+						inputs.append(element.title().strip())
 				else:
-					e1 = message.content.split("=")[0].split(",")[0].title().strip()
-					e2 = message.content.split("=")[0].split(",")[1].title().strip()
+					for element in message.content.split(","):
+						inputs.append(element.title().strip())
 					
+				if str(message.author.id) not in players.keys():
+					players[str(message.author.id)] = Player()
+		
+				print(inputs)
+				result = find_combination(inputs, reactions)
+		
+				if ifIn(inputs, list(elements)) == False:
+					await message.channel.send("🔴 **ERROR**:  The element you placed in does not exist")
+				elif ifIn(inputs, players[str(message.author.id)].elements) == False:
+					await message.channel.send("🔴 **ERROR**: The elements you placed are not in your inventory.")
+				elif result == False:
+					await message.channel.send(f"🟡 **WARNING**: Result does not exist, to request one, do {'+'.join(sorted(inputs))}=Your result!.")
+				elif result in players[str(message.author.id)].elements:
+					await message.channel.send(f"🔷 **INFO**: You already have {result}")
+					
+					lastElementCreated[str(message.author.id)] = result
+				else:
+					if randint(1, 15) == 1:
+						superElement = True
+					else:
+						superElement = False
+						
+					try:
+						upgrade = players[str(message.author.id)]["upgrade"]
+					except:
+						upgrade = 1
+		
+					wattsAfterCreation = elements[result].getWatts(superElement, upgrade)
+					
+					if superElement:
+						a = f"Luckily, you created a super element, so, you created {wattsAfterCreation} watts."
+					else:
+						a = f"You created {wattsAfterCreation} watts!"
+		
+					embed = discord.Embed(
+						colour=int(elements[result].color, 16),
+						title=f'You created {result}',
+						description=a
+					)
+		
+					embed.set_footer(text=f"Tip/Fun Fact: {choice(tips)}")
+		
+					if result not in players[str(message.author.id)].elements:
+						players[str(message.author.id)].addElement(result)
+						
+					players[str(message.author.id)].watts += wattsAfterCreation
+		
+					await message.channel.send(embed=embed)
+					del wattsAfterCreation
+		
+					lastElementCreated[str(message.author.id)] = result
+			except IndexError:
+				await message.channel.send("🔴 **ERROR**: You have a missing argument in your command")
+
+			save()
+		elif "*" == message.content[0] and message.channel.id in botchannels:
+			try:
+				for x in range(1, int(message.content.replace("*", ""))):
+				  result = find_combination([lastElementCreated[str(message.author.id)], lastElementCreated[str(message.author.id)]], reactions)
+				  
+				  if result == False:
+					  await message.channel.send(f"🟡 **WARNING**: Result does not exist, to request one, do {lastElementCreated[str(message.author.id)]}+{lastElementCreated[str(message.author.id)]}=Your result!")
+				  elif result in players[str(message.author.id)].elements:
+					  await message.channel.send(f"🔷 **INFO**: You already have {result}")
+					  
+					  lastElementCreated[str(message.author.id)] = result
+				  else:			
+					  if randint(1, 15) == 1:
+						  superElement = True
+					  else:
+						  superElement = False
+						
+					  upgrade = players[str(message.author.id)].upgrade
+						
+					  wattsAfterCreation = elements[result].getWatts(superElement, upgrade)
+					  
+					  if superElement:
+						  a = f"Luckily, you created a super element, so, you created {wattsAfterCreation} watts."
+					  else:
+						  a = f"You created {wattsAfterCreation} watts!"
+		
+					  embed = discord.Embed(
+						  colour=int(elements[result].color, 16),
+						  title=f'You created {result}',
+						  description=a
+					  )
+		
+					  embed.set_footer(text=f"Tip/Fun Fact: {choice(tips)}")
+		
+					  if result not in players[str(message.author.id)].elements:
+						  players[str(message.author.id)].addElement(result)
+		
+					  players[str(message.author.id)].watts += wattsAfterCreation
+		
+					  await message.channel.send(embed=embed)
+					  del wattsAfterCreation
+		
+					  lastElementCreated[str(message.author.id)] = result
+			except ValueError:
+				await message.channel.send("🔴 **ERROR**: You have a missing argument on your command")
+			except IndexError:
+				await message.channel.send("🔴 **ERROR**: You have a missing argument on your command")
+		elif ("+" in message.content or ", " in message.content or "\n" in message.content) and ("=" in message.content and "==" not in message.content) and message.channel.id in botchannels:
+			if str(message.author.id) not in players:
+			  players[str(message.author.id)] = Player()
+			  
+			inputs = []
+			  
+			try:
+				if "+" in message.content:
+					for element in message.content.split("=")[0].split("+"):
+						inputs.append(element.title().strip())
+				elif "\n" in message.content:
+					for element in message.content.split("=")[0].split("\n"):
+						inputs.append(element.title().strip())
+				else:
+					for element in message.content.split("=")[0].split(","):
+						inputs.append(element.title().strip())
+
 				result = message.content.split("=")[1].title().strip()
 				
-				resultExists = find_combination(e1, e2, reactions)
+				resultExists = find_combination(inputs, reactions)
 	
-				print(e1, e2, result)
-				if e1 not in elements or e2 not in elements:
+				print(inputs, result)
+				
+				if not ifIn(inputs, elements):
 					await message.channel.send("🔴 **ERROR**: Element 1 or 2 is does not exist")
 				elif resultExists != False:
 					await message.channel.send("🔴 **ERROR**: Result does exist")
-				elif ifIn(result, requests, e1, e2) == True:
+				elif e("+".join(sorted(inputs)), result, requests):
 					await message.channel.send("🔴 **ERROR**: Suggestion exists")
 				elif len(result) > 256:
 					await message.channel.send("🔴 **ERROR**: Element longer than 256 characters")
 				elif players[str(message.author.id)].watts < 15:
 					await message.channel.send("🟡 **WARNING**: You are too poor")
 				else:
-					if f"{e1}+{e2}" not in requests:
-						requests[f"{e1}+{e2}"] = {result: [[], message.author.id]}
+					players[str(message.author.id)].watts -= 15
+					
+					if "+".join(sorted(inputs)) not in requests:
+						requests["+".join(sorted(inputs))] = {result: [0, message.author.id]}
 					else:
-						requests[f"{e1}+{e2}"][result] = [[], message.author.id]
+						requests["+".join(sorted(inputs))][result] = [0, message.author.id]
 			
 					embed = discord.Embed(
 						title=f'You requested!',
@@ -444,66 +563,69 @@ async def on_message(message):
 					)
 			
 					await message.channel.send(embed=embed)
-			except:
+			except IndexError:
 				await message.channel.send("🔴 **ERROR**: You have a missing argument in your command")
-		elif ("+" in message.content or ", " in message.content or "\n" in message.content) and "==" in message.content:
+		elif ("+" in message.content or ", " in message.content or "\n" in message.content) and ("==" in message.content) and (message.channel.id in botchannels):
+			inputs = []
+			
 			if True:
 				if "+" in message.content:
-					e1 = message.content.split("=")[0].split("+")[0].title().strip()
-					e2 = message.content.split("=")[0].split("+")[1].title().strip()
+					for element in message.content.split("==")[0].split("+"):
+						inputs.append(element.title().strip())
 				elif "\n" in message.content:
-					e1 = message.content.split("=")[0].split("\n")[0].title().strip()
-					e2 = message.content.split("=")[0].split("\n")[1].title().strip()
+					for element in message.content.split("==")[0].split("\n"):
+						inputs.append(element.title().strip())
 				else:
-					e1 = message.content.split("=")[0].split(",")[0].title().strip()
-					e2 = message.content.split("=")[0].split(",")[1].title().strip()
+					for element in message.content.split("==")[0].split(","):
+						inputs.append(element.title().strip())
 					
 				result = message.content.split("==")[1].title().strip()
 				
 				gen = 0
 			
-				print(e1, e2, result)
+				print(inputs, result)
 		
-				if f"{e1}+{e2}" not in requests:
-					await message.channel.send("🔴 **ERROR**: Request does not exist, to add one use e!request")
-				elif message.author.id in requests[f"{e1}+{e2}"][result][0]:
-					await message.channel.send("🟡 **WARNING**: You already voted")
+				if "+".join(sorted(inputs)) not in requests:
+					await message.channel.send(f'🔴 **ERROR** Request does not exist, to request it do {"+".join(sorted(inputs))}')
 				elif players[str(message.author.id)].watts < 10:
 					await message.channel.send("🟡 **WARNING**: You are too poor")
 				else:
 					players[str(message.author.id)].watts -= 10
 		
-					if message.author.id not in [806714339943251999, 511108607043960843]:
-						requests[f"{e1}+{e2}"][result][0].append(message.author.id)
-					else:
-						requests[f"{e1}+{e2}"][result][0].append("HAHA MONEY GO BRRRRR")
+					requests["+".join(sorted(inputs))][result][0] += 1
 					
-		
-					if len(requests[f"{e1}+{e2}"][result][0]) == 2:
+					if requests["+".join(sorted(inputs))][result][0] == 2:
 						if result not in elements:
 							dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
-		
-							if elements[e1].generation > elements[e2].generation:
-								gen = elements[e1].generation
-							else:
-								gen = elements[e2].generation
-								
-							if e1 == e2:
-								diff = elements[e1].difficulty
-							else:
-								if elements[e1].difficulty > elements[e2].difficulty:
-									diff = elements[e1].difficulty + 1
-								else:
-									diff = elements[e2].difficulty + 1
+							gen = []
+							diff = []
+							color = "wiuiusqwuuwsquiwq"
 									
-							print(elements["Fire"])
-		
+							for element in inputs:
+								gen.append(elements[element].generation)
+															
+							gen = sorted(gen)[0]
+							
+							if checkList(inputs):
+								diff = elements[inputs[0]].difficulty
+							else:
+								for element in inputs:
+									diff.append(elements[element].difficulty)
+									
+								diff = sorted(diff)[0] + 1
+								
+							for element in inputs:
+								if element == inputs[0] or element == inputs[1]:
+									color = combine_hex_values(elements[inputs[0]].color, elements[inputs[1]].color)
+								else:
+									color = combine_hex_values(color, elements[element].color)
+										
 							elements[result] = Element(
 								  date = dt_string,
-									color = combine_hex_values(elements[e1].color, elements[e2].color),
+									color = color,
 									generation = gen + 1,
 								  difficulty = diff,
-									creator = requests[f"{e1}+{e2}"][result][1]
+									creator = requests["+".join(sorted(inputs))][result][1]
 							)
 		
 							del gen, dt_string
@@ -525,9 +647,15 @@ async def on_message(message):
 		
 							await message.channel.send(embed=embed)
 		
-						reactions[f"{e1}+{e2}"] = result
-		
-						del requests[f"{e1}+{e2}"]
+						reactions["+".join(sorted(inputs))] = result
+						
+						if result not in players[str(requests["+".join(sorted(inputs))][result][1])].elements:
+							players[str(requests["+".join(sorted(inputs))][result][1])].addElement(result)
+							
+						if result not in players[str(message.author.id)].elements:
+							players[str(message.author.id)].addElement(result)
+							
+						del requests["+".join(sorted(inputs))]
 					else:
 						embed = discord.Embed(title=f"You voted!",
 																	color=discord.Color.green(),
@@ -616,13 +744,13 @@ async def on_message(message):
 			newIndex = index - 1
 			
 			try:
-				embed = discord.Embed(
+			  embed = discord.Embed(
 			    colour=0xff0048,
 				  title=f"Elements (Index:{index} / {maxIndex})",
 				  description="\n".join(list(elements)[0+newIndex*25:newIndex*25+25])
 			  )
-			except:
-				embed = discord.Embed(
+			except IndexError:
+			   embed = discord.Embed(
 			  	colour=0xff0048,
 				  title=f"Elements (Index:{index} / {maxIndex})",
 			    description="\n".join(list(elements)[0+newIndex*50:len(elements)])
@@ -653,7 +781,7 @@ async def on_message(message):
 						description="\n".join(list(elements2)[0:25])
 					)
 					
-				except:
+				except ValueError:
 					await message.channel.send("🔴 **ERROR**: Value does not exist")
 				
 				embed.set_footer(text=f"Tip/Fun Fact: {choice(tips)}")
@@ -663,8 +791,11 @@ async def on_message(message):
 		elif "e!inv" in message.content:	
 			try:
 				user = client.get_user(message.mentions[0].id)
-			except:
+			except IndexError:
 				user = message.author
+				
+			if str(user.id) not in players:
+				players[str(user.id)] = Player()
 
 			if len(players[str(user.id)].elements) % 25 == 0:
 				maxIndex = len(players[str(user.id)].elements) / 25
@@ -673,12 +804,9 @@ async def on_message(message):
 
 			try:
 				index = int(message.content.replace(f"e!inv", "").replace(f"<@{user.id}>", "").strip())
-			except:
+			except ValueError:
 				index = 1
 
-			if str(user.id) not in players:
-				players[str(user.id)] = Player()
-				
 			if index > maxIndex:
 				index = maxIndex
 				
@@ -690,7 +818,7 @@ async def on_message(message):
 				  title=f"Inventory of {user.name} (Index:{index}/{maxIndex})",
 				  description="\n".join(list(players[str(user.id)].elements)[0+newIndex*25:newIndex*25+25])
 			  )
-			except:
+			except IndexError:
 				embed = discord.Embed(
 			  	colour=0x7242f5,
 				  title=f"Inventory of {user.name} (Index:{index}/{maxIndex})",
@@ -713,21 +841,21 @@ async def on_message(message):
 			elif element in ["Water", "Earth", "Air"]:
 				await message.channel.send("🔴 **ERROR**: Primoridial elements doesn't have any solution")
 			elif players[str(message.author.id)].watts < 20:
-				message.channel.send("🟡 **WARNING**: You are too poor")
+				await message.channel.send("🟡 **WARNING**: You are too poor")
 			else:
 				players[str(message.author.id)].watts -= 20
 	
 				for reaction in reactions:
 					if reactions[reaction] == element:
-						if randint(1, 2) == 1:
-							reaction = {"e1": reaction.split("+")[1], "e2": reaction.split("+")[0]}
-						else:
-							reaction = {"e1": reaction.split("+")[0], "e2": reaction.split("+")[1]}
+						reaction = sorted(reaction.split("+"), key=lambda k: random_sort())
+						r = randint(0, len(reaction))
+						
+						reaction[r] = str(len(reaction[r]) * "?")
 							
-						if (reaction["e1"] in players[str(message.author.id)].elements) and (reaction["e2"] in players[str(message.author.id)].elements):
-							a += "\n✅ " + reaction["e1"] + "+" + str(len(reaction["e2"]) * "?")
+						if ifIn(reaction, players[str(message.author.id)].elements):
+							a += "\n❌ " + " + ".join(reaction)
 						else:
-							a += "\n❌ " + reaction["e1"] + "+" + str(len(reaction["e2"]) * "?")
+							a += "\n✅ " + " + ".join(reaction)
 	
 				embed = discord.Embed(description=a,
 															colour=0xdecd49,
@@ -776,7 +904,7 @@ async def on_message(message):
 				await message.channel.send(embed=embed)
 			
 			save()
-		elif message.content == "e!active":
+		elif message.content == "e!active" and message.channel.id in botchannels:
 			if players[str(message.author.id)].watts < 20:
 				message.channel.send("🟡 **WARNING**: You are too poor")
 			else:
@@ -828,13 +956,13 @@ async def on_message(message):
 				await message.channel.send(embed=embed)
 	
 			save()
-		elif "e!upgrade" in message.content:
+		elif "e!upgrade" in message.content and message.channel.id in botchannels:
 			try:
 				number = int(message.content.replace("e!upgrade", ""))
-			except:
-				number = 0
+			except ValueError:
+				number = None
 	
-			if number == 0:
+			if number == None:
 				embed = discord.Embed(colour=0x03fc1c, title="Upgrade")
 	
 				embed.add_field(name='Upgrade Level',
@@ -870,6 +998,9 @@ async def on_message(message):
 				user = client.get_user(message.mentions[0].id)
 			except:
 				user = message.author
+				
+			if str(user.id) not in players:
+				players[str(user.id)] = Player()
 	
 			embed = discord.Embed(colour=0x1cb7ff, title=f"Balance of {user.name}")
 	
@@ -878,7 +1009,7 @@ async def on_message(message):
 											inline=True)
 	
 			await message.channel.send(embed=embed)
-		elif "e!battle" in message.content:
+		elif "e!battle" in message.content and message.channel.id in botchannels:
 			if message.content == "e!battle":
 				await message.channel.send("🔴 **ERROR**: You have a missing argument in your command")
 			else:
@@ -887,7 +1018,6 @@ async def on_message(message):
 			if str(message.author.id) not in players:
 				players[str(message.author.id)] = Player()
 					
-	
 			if str(user2.id) not in players:
 				players[str(user2.id)] = Player()
 	
@@ -899,7 +1029,7 @@ async def on_message(message):
 			]
 	
 			def check(m):
-				return (m.author.id == player[index % 2])
+				return (m.author.id == player[index % 2] and m.channel.id in botchannels)
 	
 			if user2.id == message.author.id:
 				await message.channel.send("🔴 **ERROR**: You are attacking yourself")
@@ -1013,8 +1143,8 @@ async def on_message(message):
 						break
 	
 					index += 1
-		elif "e!leaderboard" in message.content:
-			try:
+		elif "e!leaderboard" in message.content and message.channel.id in botchannels:
+			if "e!leaderboard" != message.content:
 				value = message.content.replace("e!leaderboard", "").strip()
 				print(value)
 				
@@ -1030,7 +1160,7 @@ async def on_message(message):
 					
 					for player in players:
 						leaderboard[player] = players[player].watts
-			except:
+			else:
 				value = "element inventory length"
 				leaderboard = {}
 				
@@ -1056,21 +1186,125 @@ async def on_message(message):
 		elif "e!profile" in message.content:
 			try:
 				user = client.get_user(message.mentions[0].id)
-			except:
+			except IndexError:
 				user = message.author
 
 			embed = discord.Embed(
-        colour = 0xf5c542,
+				colour = 0xf5c542,
 				title = f"Profile of {user.name}"
-    	)
+			)
 			embed.add_field(name='Watts',value=players[str(user.id)].watts, inline=False)
 			embed.add_field(name='Total Elements',value=str(len(players[str(user.id)].elements)) + "/" + str(len(elements)), inline=False)
 			embed.add_field(name='Percentage', value=str(int((len(players[str(user.id)].elements) / len(elements)) * 100)) + "%", inline=False)
 
 			await message.channel.send(embed=embed)
+		elif "e!buy" in message.content and message.channel.id in botchannels:
+			if "e!buy" != message.content:
+				element = message.content.replace("e!buy", "").strip().title()
+				
+				if str(message.author.id) not in players:
+					players[str(message.author.id)] = Player()
+				
+				if element not in elements:
+					await message.channel.send("🔴 **ERROR**: Element does'nt exist")
+				elif element in players[str(message.author.id)].elements:
+					await message.channel.send("🟡 **WARNING**: You have the element already")
+				else:
+					rarity = 0
+					
+					for player in players:
+						if element in players[player].elements:
+							rarity += 1
+							
+					rarity = len(players) - rarity
+					
+					price = elements[element].difficulty * rarity
+					
+					players[str(message.author.id)].addElement(element)
+					players[str(message.author.id)].watts -= price
+					
+					embed = discord.Embed(
+						title=f"You bought {element}!",
+						description=f"You bought {element}, you paid {price} watts",
+						color=0x777777
+					)
+					
+					await message.channel.send(embed=embed)
+			else:
+				await message.channel.send("🔴 **ERROR**: You have a missing argument in your command")
+			
+			save()
+		elif "e!sell" in message.content and message.channel.id in botchannels:
+			if "e!sell" != message.content:
+				element = message.content.replace("e!sell", "").strip().title()
+				
+				if str(message.author.id) not in players:
+					players[str(message.author.id)] = Player()
+				
+				if element not in elements:
+					await message.channel.send("🔴 **ERROR**: Element does'nt exist")
+				elif element not in players[str(message.author.id)].elements:
+					await message.channel.send("🔴 **ERROR**: You dont have the element.")
+				else:
+					rarity = 0
+					
+					for player in players:
+						if element in players[player].elements:
+							rarity += 1
+							
+					rarity = len(players) - rarity
+					
+					price = elements[element].difficulty * rarity
+					
+					players[str(message.author.id)].elements.remove(element)
+					players[str(message.author.id)].watts += price
+					
+					embed = discord.Embed(
+						title=f"You sold {element}!",
+						description=f"You sold your {element}, you got {price} watts",
+						color=0x777777
+					)
+					
+					await message.channel.send(embed=embed)
+			else:
+				await message.channel.send("🔴 **ERROR**: You have a missing argument in your command")
+			
+			save()
+		elif message.content == "e!tax":
+			if str(message.author.id) not in players:
+				players[str(message.author.id)] = Player()
+				
+			if message.author.id == 806714339943251999:
+				await message.channel.send("🟡 **WARNING**: You dont have to pay taxes")
+			elif (int(players[str(message.author.id)].lpt.split(":")[0])) == (int(now.strftime("%H")) + 1):
+				players[player].lpt = now.strftime("%m")
+				players[player].taxEvaded = 0
+				players[player].watts -= (players[player].watts / 10) * (players[player].taxEvaded + 1)
+				
+				await message.channel.send("You paid your taxes!")
+			else:
+				await message.channel.send("🟡 **WARNING**: You already paid your taxes!")
+			save()
 		elif message.content == "e!add":
 			await message.channel.send(
 					"https://discord.com/api/oauth2/authorize?client_id=871201945677877298&permissions=0&scope=bot"
 			)
+		elif message.content == "e!purge":
+			if message.author.id == 806714339943251999:
+				for player in players:
+					if players[player].watts >= 1000:
+						players[player].watts = 1000
+						players[player].upgrade = 2
+						
+				await message.channel.send("Sucsessfully purged!")
+		elif message.content == "e!botchannel" and (message.author.guild_permissions.administrator or message.author.id == 806714339943251999):
+			if message.channel.id in botchannels:
+				botchannels.remove(message.channel.id)
+			else:
+				botchannels.append(message.channel.id)
+				
+			await message.channel.send("Done!")
+			save()
 
-client.run(token)
+with open("token.txt", "r") as f:
+	client.run(f.read())
