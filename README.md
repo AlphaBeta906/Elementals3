@@ -1,5 +1,5 @@
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-no-red.svg)](https://GitHub.com/AlphaBeta906/Modifiable-TCG/graphs/commit-activity)
-[![Status](https://img.shields.io/badge/Status%3F-cancelled-green.svg)](https://github.com/AlphaBeta906/Modifiable-TCG/issues)
+[![Status](https://img.shields.io/badge/Status%3F-cancelled-red.svg)](https://github.com/AlphaBeta906/Modifiable-TCG/issues)
 # Elementals3
 Elementals 3 is a open-source down discord bot thats bacically the same as [Elemental 3](https://www.youtube.com/watch?v=rQWwfYSUckY). If you dont know whats Elemental 3, its basically where you combine elements to combine new ones voted by the community.
 
